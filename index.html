@@ -437,8 +437,12 @@ async function lerEspelho() {
   const txt = await new Response(new Blob([plain]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
   return JSON.parse(txt);
 }
-let LEAD = new Map(), HIST = new Map(), ETAPA = new Map();
+let LEAD = new Map(), HIST = new Map(), ETAPA = new Map(), TESTE = new Map();
+const faltaDias = t => Math.ceil((new Date(t.fim_em + "T23:59:59-03:00") - Date.now()) / 86400000);
+const testeTxt = t => { const f = faltaDias(t); return `${t.dias} dias · de ${dataCurta(t.inicio_em)} até ${dataCurta(t.fim_em)} · ${f >= 0 ? "faltam " + f + (f === 1 ? " dia" : " dias") : "acabou há " + (-f) + (f === -1 ? " dia" : " dias")}`; };
+const testeTag = l => { const t = TESTE.get(l.id); if (!t || t.status !== "ativo") return ""; const f = faltaDias(t); return `<span class="pill" style="background:var(--sky);color:#2563eb">${ic("clock", "s")} ${f >= 0 ? f + " d" : "acabou"}</span>`; };
 function indexar() {
+  TESTE = new Map((S.testes || []).map(t => [t.lead_id, t]));
   LEAD = new Map(S.leads.map(l => [l.id, l]));
   ETAPA = new Map(S.etapas.map(e => [e.codigo, e]));
   HIST = new Map();
@@ -545,7 +549,7 @@ function dash() {
   </div>
   <div class="grid2" style="margin-top:16px">${canalCard("E-mail", "mail", M.email, { ligada: ligadoEmail, teto: cfg.email_teto_dia })}${canalCard("WhatsApp", "zap", M.whatsapp, { ligada: cfg.automacao_whatsapp === "ligada" && cfg.whatsapp_conectado === "sim", aguarda: cfg.whatsapp_conectado !== "sim", teto: cfg.whatsapp_teto_dia })}</div>
   <div class="cols2" style="margin-top:16px">
-    <div class="card"><div class="ttl">${ic("kanban")} Funil</div><div style="margin-top:10px">${funil}</div></div>
+    <div class="card"><div class="ttl">${ic("kanban")} Funil</div><div style="margin-top:10px">${funil}</div>${(S.testes || []).filter(t => t.status === "ativo").length ? `<div class="small mut" style="margin-top:10px">Testes gratuitos ativos: <b style="color:var(--txt)">${(S.testes || []).filter(t => t.status === "ativo").length}</b> · o mais próximo de acabar: ${esc(testeTxt((S.testes || []).filter(t => t.status === "ativo").sort((a, b) => a.fim_em.localeCompare(b.fim_em))[0]))}</div>` : ""}</div>
     <div class="card"><div class="ttl">${ic("clock")} Últimas atividades</div><div class="list" style="margin-top:8px">${rec}</div></div>
   </div>
   <div class="card" style="margin-top:16px"><div class="ttl">${ic("send")} Últimos 14 dias</div>
@@ -559,7 +563,7 @@ function funil() {
     const L = ls.filter(l => l.etapa === e.codigo).sort((a, b) => (b.nota ?? -1) - (a.nota ?? -1) || String(b.atualizado_em).localeCompare(String(a.atualizado_em)));
     const cards = L.slice(0, 30).map(l => { const h = (HIST.get(l.id) || []).filter(i => i.tipo !== "resposta").slice(-1)[0];
       return `<div class="kc c${nota5(l.nota)}" data-lead="${l.id}"><div class="t">${esc(l.empresa)}</div><div class="ft" style="margin-top:10px;padding-right:0"><div><small>${esc([l.cidade, l.uf].filter(Boolean).join(" · "))}</small><small>${esc(l.segmento || "")}</small></div></div>
-        <div style="display:flex;align-items:center;gap:8px;margin-top:10px">${notaTag(l.nota)}${canais(l)}${h ? `<span style="margin-left:auto">${pill(h.status)}</span>` : ""}</div></div>`; }).join("");
+        <div style="display:flex;align-items:center;gap:8px;margin-top:10px">${notaTag(l.nota)}${canais(l)}${testeTag(l)}${h ? `<span style="margin-left:auto">${pill(h.status)}</span>` : ""}</div></div>`; }).join("");
     return `<div class="col"><div class="hd"><span class="st" style="background:color-mix(in srgb,${e.cor} 16%,transparent);color:${e.cor}">${esc(e.rotulo)} <em>${n0(L.length)}</em></span></div><div class="ln" style="background:${e.cor};opacity:.5"></div>
       <div class="bdy">${cards || `<div class="hatch">vazio</div>`}${L.length > 30 ? `<div class="more2">+ ${n0(L.length - 30)} na aba Leads</div>` : ""}</div></div>`;
   }).join("");
@@ -643,7 +647,7 @@ function abrirLead(id) {
   gaveta(`<div class="dh"><div style="display:flex;align-items:center;gap:14px">${av(l.empresa, "lg")}<div style="flex:1;min-width:0"><div class="h1" style="font-size:21px">${esc(l.empresa)}</div><div class="sub" style="margin-top:6px">${etapaPill(l.etapa)} ${notaTag(l.nota)}</div></div><button class="ib" id="x">${ic("x")}</button></div></div>
     <div class="db"><div class="sec"><div class="kv">${kv("Contato", esc([l.nome, l.cargo].filter(Boolean).join(" · ")))}${kv("Cidade", esc([l.cidade, l.uf].filter(Boolean).join(" · ")))}${kv("Segmento", esc(l.segmento))}${kv("Campanha", esc(l.campanha))}
       ${kv("E-mail", l.email ? `<a href="mailto:${encodeURIComponent(l.email)}" style="text-decoration:underline">${esc(l.email)}</a>` : "")}${kv("Telefone", l.telefone ? `<a href="tel:${esc(String(l.telefone).replace(/[^\d+]/g, ""))}" style="text-decoration:underline">${esc(l.telefone)}</a>` : "")}
-      ${kv("Último contato", esc(dataCurta(l.ultimo_contato)))}${kv("Próximo follow-up", esc(dataCurta(l.proximo_followup)))}${kv("Fonte", esc(l.fonte))}${kv("Status no banco", esc(l.status))}
+      ${kv("Último contato", esc(dataCurta(l.ultimo_contato)))}${kv("Próximo follow-up", esc(dataCurta(l.proximo_followup)))}${kv("Teste gratuito", TESTE.get(l.id) ? esc(testeTxt(TESTE.get(l.id)) + (TESTE.get(l.id).status !== "ativo" ? " · " + TESTE.get(l.id).status : "")) : "", true)}${kv("Fonte", esc(l.fonte))}${kv("Status no banco", esc(l.status))}
       ${kv("Dor provável", esc(l.dor), true)}${kv("Gancho da mensagem", esc(l.gancho), true)}${kv("Observações", esc(l.observacoes), true)}</div></div>
     <div class="sec"><h6>Histórico (${h.length})</h6>${h.length ? h.map(itemHist).join("") : `<div class="empty">Nenhuma mensagem para este lead.</div>`}</div></div>`);
   document.getElementById("x").onclick = fechar;
